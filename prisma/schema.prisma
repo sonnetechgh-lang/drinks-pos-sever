@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(CASHIER)
+  createdAt DateTime @default(now())
+  sales     Sale[]
+}
+
+enum Role {
+  ADMIN
+  CASHIER
+}
+
+model Category {
+  id       String    @id @default(uuid())
+  name     String    @unique
+  products Product[]
+}
+
+model Product {
+  id             String                 @id @default(uuid())
+  name           String
+  price          Float
+  stock          Int                    @default(0)
+  baseUnit       ProductBaseUnit        @default(UNIT)
+  categoryId     String
+  category       Category               @relation(fields: [categoryId], references: [id])
+  packageOptions ProductPackageOption[]
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  saleItems      SaleItem[]
+  movements      StockMovement[]
+}
+
+model ProductPackageOption {
+  id           String     @id @default(uuid())
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id])
+  name         String
+  unitsPerBase Int
+  price        Float
+  isDefault    Boolean    @default(false)
+  active       Boolean    @default(true)
+  saleItems    SaleItem[]
+}
+
+enum ProductBaseUnit {
+  UNIT
+  BOTTLE
+}
+
+model Customer {
+  id          String                @id @default(uuid())
+  clientId    String?               @unique
+  name        String
+  phone       String?
+  notes       String?
+  creditLimit Float                 @default(0)
+  active      Boolean               @default(true)
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  sales       Sale[]
+  payments    CustomerPayment[]
+  ledger      CustomerLedgerEntry[]
+}
+
+model CustomerPayment {
+  id            String        @id @default(uuid())
+  clientId      String        @unique
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  amount        Float
+  method        PaymentMethod
+  momoReference String?
+  note          String?
+  cashierId     String
+  createdAt     DateTime      @default(now())
+  syncedAt      DateTime?
+}
+
+model CustomerLedgerEntry {
+  id         String          @id @default(uuid())
+  customerId String
+  customer   Customer        @relation(fields: [customerId], references: [id])
+  type       LedgerEntryType
+  amount     Float
+  saleId     String?
+  paymentId  String?
+  note       String?
+  createdAt  DateTime        @default(now())
+}
+
+enum PaymentMethod {
+  CASH
+  MOMO
+  ADVANCE_BALANCE
+  CREDIT
+}
+
+enum LedgerEntryType {
+  SALE_DEBIT
+  PAYMENT_CREDIT
+  ADVANCE_APPLIED
+  CREDIT_REVERSAL
+  ADJUSTMENT
+}
+
+model Sale {
+  id            String        @id @default(uuid())
+  clientId      String        @unique
+  total         Float
+  amountPaid    Float         @default(0)
+  creditAmount  Float         @default(0)
+  customerId    String?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  customerName  String?
+  paymentStatus PaymentStatus @default(PAID)
+  cashierId     String
+  cashier       User          @relation(fields: [cashierId], references: [id])
+  payments      SalePayment[]
+  items         SaleItem[]
+  createdAt     DateTime      @default(now())
+  syncedAt      DateTime?
+}
+
+model SalePayment {
+  id            String        @id @default(uuid())
+  saleId        String
+  sale          Sale          @relation(fields: [saleId], references: [id])
+  method        PaymentMethod
+  amount        Float
+  momoReference String?
+  createdAt     DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PAID
+  PARTIAL
+  CREDIT
+}
+
+model SaleItem {
+  id              String                @id @default(uuid())
+  saleId          String
+  sale            Sale                  @relation(fields: [saleId], references: [id])
+  productId       String
+  product         Product               @relation(fields: [productId], references: [id])
+  packageOptionId String?
+  packageOption   ProductPackageOption? @relation(fields: [packageOptionId], references: [id])
+  packageName     String
+  unitsPerBase    Int
+  quantity        Int
+  baseQuantity    Int
+  unitPrice       Float
+}
+
+model StockMovement {
+  id        String       @id @default(uuid())
+  productId String
+  product   Product      @relation(fields: [productId], references: [id])
+  type      MovementType
+  quantity  Int
+  note      String?
+  createdAt DateTime     @default(now())
+}
+
+enum MovementType {
+  RESTOCK
+  SALE
+  ADJUSTMENT
+}
