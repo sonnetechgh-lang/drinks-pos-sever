@@ -22,6 +22,14 @@ app.use('/v1/sales', salesRouter)
 app.use('/v1/customers', customersRouter)
 app.use('/v1/customer-payments', customerPaymentsRouter)
 
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Drinks POS backend is running',
+    documentation: 'Use /health or /v1/* endpoints for API access'
+  })
+})
+
 app.get('/health', (req, res) => {
   res.json({ success: true, message: 'Drinks POS backend is running' })
 })
