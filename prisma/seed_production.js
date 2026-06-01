@@ -20,16 +20,19 @@ const pool = new Pool({
 const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
+const adminEmail = process.env.ADMIN_EMAIL || 'admin@palacelane.com'
+const adminPasswordPlain = process.env.ADMIN_PASSWORD || 'Cornerstone@1'
+
 async function main() {
   console.log('Starting production seed...')
   
-  const adminPassword = await bcrypt.hash('admin-secure-pass-change-me', 10)
+  const adminPassword = await bcrypt.hash(adminPasswordPlain, 10)
 
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@drinkspos.com' },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: 'admin@drinkspos.com',
+      email: adminEmail,
       name: 'Production Admin',
       password: adminPassword,
       role: 'ADMIN',
