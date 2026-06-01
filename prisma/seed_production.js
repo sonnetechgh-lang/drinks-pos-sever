@@ -1,7 +1,24 @@
+import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
+import { PrismaPg } from '@prisma/adapter-pg'
+import pkg from 'pg'
 import bcrypt from 'bcryptjs'
 
-const prisma = new PrismaClient()
+const { Pool } = pkg
+const rawDatabaseUrl = process.env.DATABASE_URL || ''
+const connectionString = rawDatabaseUrl.replace(/^"|"$/g, '')
+
+if (!connectionString) {
+  console.error('DATABASE_URL is not set or empty')
+  process.exit(1)
+}
+
+const pool = new Pool({
+  connectionString,
+  ssl: { rejectUnauthorized: false },
+})
+const adapter = new PrismaPg(pool)
+const prisma = new PrismaClient({ adapter })
 
 async function main() {
   console.log('Starting production seed...')

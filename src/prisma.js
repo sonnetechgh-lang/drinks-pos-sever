@@ -13,7 +13,10 @@ if (!connectionString) {
 }
 
 // Create a PG pool with the connection string
-const pool = new Pool({ connectionString })
+const pool = new Pool({
+  connectionString,
+  ssl: { rejectUnauthorized: false },
+})
 
 const adapter = new PrismaPg(pool)
 
