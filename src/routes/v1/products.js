@@ -6,6 +6,8 @@ import { roleGuard } from '../../middleware/roleGuard.js'
 const router = express.Router()
 
 router.get('/', auth, productsController.getAllProducts)
+router.get('/count', auth, productsController.getProductCount)
+router.get('/low-stock', auth, productsController.getLowStockProducts)
 router.get('/:id', auth, productsController.getProductById)
 router.post('/', auth, roleGuard(['ADMIN']), productsController.createProduct)
 router.patch('/:id', auth, roleGuard(['ADMIN']), productsController.updateProduct)

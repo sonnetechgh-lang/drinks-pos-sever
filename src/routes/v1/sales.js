@@ -6,5 +6,10 @@ const router = express.Router()
 
 router.post('/sync', auth, salesController.syncSales)
 router.get('/summary', auth, salesController.getSalesSummary)
+router.get('/today', auth, salesController.getTodaySales)
+router.get('/today/total', auth, salesController.getTodayTotal)
+router.get('/best-selling', auth, salesController.getBestSellingProducts)
+router.get('/outstanding-credit/total', auth, salesController.getOutstandingCredit)
+router.get('/reports', auth, salesController.getSalesReport)
 
 export default router

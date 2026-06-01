@@ -203,3 +203,148 @@ export const getSalesSummary = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
+
+// Dashboard: Today's sales (limited list)
+export const getTodaySales = async (req, res) => {
+  const { limit = 5 } = req.query
+  try {
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+    const sales = await prisma.sale.findMany({
+      where: { createdAt: { gte: startOfToday } },
+      include: {
+        customer: { select: { name: true } },
+        cashier: { select: { name: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: parseInt(limit, 10)
+    })
+
+    res.json({ success: true, data: sales })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// Dashboard: Today's sales total
+export const getTodayTotal = async (req, res) => {
+  try {
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+    const result = await prisma.sale.aggregate({
+      _sum: { total: true },
+      _count: true,
+      where: { createdAt: { gte: startOfToday } }
+    })
+
+    res.json({
+      success: true,
+      data: {
+        total: result._sum.total || 0,
+        count: result._count || 0
+      }
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// Dashboard: Best selling products
+export const getBestSellingProducts = async (req, res) => {
+  const { limit = 5 } = req.query
+  try {
+    const topProducts = await prisma.saleItem.groupBy({
+      by: ['productId'],
+      _sum: { quantity: true, subtotal: true },
+      orderBy: { _sum: { quantity: 'desc' } },
+      take: parseInt(limit, 10)
+    })
+
+    const productsWithDetails = await Promise.all(
+      topProducts.map(async (item) => {
+        const product = await prisma.product.findUnique({
+          where: { id: item.productId },
+          select: { name: true, id: true }
+        })
+        return {
+          productId: item.productId,
+          name: product?.name || 'Unknown',
+          quantity: item._sum.quantity || 0,
+          revenue: item._sum.subtotal || 0
+        }
+      })
+    )
+
+    res.json({ success: true, data: productsWithDetails })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// Dashboard: Total outstanding credit
+export const getOutstandingCredit = async (req, res) => {
+  try {
+    const result = await prisma.customerLedgerEntry.aggregate({
+      _sum: { amount: true },
+      where: {
+        type: 'SALE_DEBIT'
+      }
+    })
+
+    const payments = await prisma.customerLedgerEntry.aggregate({
+      _sum: { amount: true },
+      where: {
+        type: 'PAYMENT_CREDIT'
+      }
+    })
+
+    const outstanding = (result._sum.amount || 0) - (payments._sum.amount || 0)
+
+    res.json({
+      success: true,
+      data: {
+        outstanding: Math.max(0, outstanding)
+      }
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// Reports: Sales by date range with filters
+export const getSalesReport = async (req, res) => {
+  const { startDate, endDate, paymentStatus, limit = 50, offset = 0 } = req.query
+  try {
+    const where = {
+      createdAt: {
+        gte: new Date(startDate || new Date(new Date().setDate(new Date().getDate() - 30))),
+        lte: new Date(endDate || new Date())
+      }
+    }
+
+    if (paymentStatus) {
+      where.paymentStatus = paymentStatus
+    }
+
+    const [sales, total] = await Promise.all([
+      prisma.sale.findMany({
+        where,
+        include: {
+          customer: { select: { name: true, phone: true } },
+          cashier: { select: { name: true } },
+          items: { include: { product: { select: { name: true } } } }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: parseInt(limit, 10),
+        skip: parseInt(offset, 10)
+      }),
+      prisma.sale.count({ where })
+    ])
+
+    res.json({ success: true, data: sales, total })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}

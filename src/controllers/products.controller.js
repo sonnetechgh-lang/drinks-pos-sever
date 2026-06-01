@@ -104,3 +104,36 @@ export const getAllCategories = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
+
+// Dashboard: Total product count
+export const getProductCount = async (req, res) => {
+  try {
+    const count = await prisma.product.count()
+    res.json({ success: true, data: { count } })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// Dashboard: Low stock items
+export const getLowStockProducts = async (req, res) => {
+  const { limit = 8 } = req.query
+  try {
+    // Get a low stock threshold (e.g., items with stock <= 10% of a default threshold)
+    // For now, we'll assume a threshold value or use a default
+    const lowStockThreshold = 5 // Default threshold
+
+    const products = await prisma.product.findMany({
+      where: {
+        stock: { lte: lowStockThreshold }
+      },
+      include: { category: true },
+      orderBy: { stock: 'asc' },
+      take: parseInt(limit, 10)
+    })
+
+    res.json({ success: true, data: products })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}

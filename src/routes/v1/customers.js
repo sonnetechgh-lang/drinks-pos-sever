@@ -6,6 +6,7 @@ import { roleGuard } from '../../middleware/roleGuard.js'
 const router = Router()
 
 router.get('/', auth, customersController.getCustomers)
+router.get('/top-debtors', auth, customersController.getTopDebtors)
 router.get('/:id', auth, customersController.getCustomerById)
 router.post('/', auth, customersController.createCustomer)
 router.patch('/:id', auth, roleGuard(['ADMIN']), customersController.updateCustomer)

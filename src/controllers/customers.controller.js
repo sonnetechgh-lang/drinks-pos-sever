@@ -160,3 +160,42 @@ export const syncCustomers = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
+
+// Dashboard: Top debtors (customers with highest outstanding credit)
+export const getTopDebtors = async (req, res) => {
+  const { limit = 5 } = req.query
+  try {
+    const customers = await prisma.customer.findMany({
+      include: {
+        ledger: true
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100 // Get all, we'll calculate balance for each
+    })
+
+    // Calculate balance for each customer and filter those with outstanding credit
+    const customersWithBalance = customers
+      .map((customer) => {
+        const balance = customer.ledger.reduce((sum, entry) => {
+          if (entry.type === 'PAYMENT_CREDIT' || entry.type === 'CREDIT_REVERSAL' || entry.type === 'ADJUSTMENT') {
+            return sum + entry.amount
+          }
+          return sum - entry.amount
+        }, 0)
+        return {
+          id: customer.id,
+          name: customer.name,
+          phone: customer.phone,
+          outstandingBalance: Math.max(0, -balance), // Negative balance means credit
+          creditLimit: customer.creditLimit
+        }
+      })
+      .filter((c) => c.outstandingBalance > 0)
+      .sort((a, b) => b.outstandingBalance - a.outstandingBalance)
+      .slice(0, parseInt(limit, 10))
+
+    res.json({ success: true, data: customersWithBalance })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
