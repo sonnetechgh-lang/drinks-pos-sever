@@ -37,13 +37,14 @@ export const getProductById = async (req, res) => {
 }
 
 export const createProduct = async (req, res) => {
-  const { name, price, stock, categoryId, baseUnit, packageOptions } = req.body
+  const { name, price, stock, lowStockThreshold, categoryId, baseUnit, packageOptions } = req.body
   try {
     const product = await prisma.product.create({
       data: {
         name,
         price: parseFloat(price),
         stock: parseInt(stock, 10) || 0,
+        lowStockThreshold: parseInt(lowStockThreshold, 10) || 5,
         categoryId,
         baseUnit: baseUnit || 'UNIT',
         packageOptions: packageOptions?.length
@@ -59,12 +60,13 @@ export const createProduct = async (req, res) => {
 
 export const updateProduct = async (req, res) => {
   const { id } = req.params
-  const { name, price, stock, categoryId, baseUnit, packageOptions } = req.body
+  const { name, price, stock, lowStockThreshold, categoryId, baseUnit, packageOptions } = req.body
   try {
     const data = {
       name,
       price: price !== undefined ? parseFloat(price) : undefined,
       stock: stock !== undefined ? parseInt(stock, 10) : undefined,
+      lowStockThreshold: lowStockThreshold !== undefined ? parseInt(lowStockThreshold, 10) : undefined,
       categoryId,
       baseUnit,
     }
@@ -119,13 +121,9 @@ export const getProductCount = async (req, res) => {
 export const getLowStockProducts = async (req, res) => {
   const { limit = 8 } = req.query
   try {
-    // Get a low stock threshold (e.g., items with stock <= 10% of a default threshold)
-    // For now, we'll assume a threshold value or use a default
-    const lowStockThreshold = 5 // Default threshold
-
     const products = await prisma.product.findMany({
       where: {
-        stock: { lte: lowStockThreshold }
+        stock: { lte: prisma.product.fields.lowStockThreshold }
       },
       include: { category: true },
       orderBy: { stock: 'asc' },

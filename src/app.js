@@ -10,7 +10,23 @@ import customersRouter from './routes/v1/customers.js'
 import customerPaymentsRouter from './routes/v1/customerPayments.js'
 
 const app = express()
-app.use(cors())
+
+const allowedOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean)
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error('Not allowed by CORS'))
+  },
+  credentials: true,
+}))
 app.use(express.json())
 
 app.use('/v1/auth', authRouter)

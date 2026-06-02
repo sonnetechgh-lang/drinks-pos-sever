@@ -28,18 +28,21 @@ model Category {
 }
 
 model Product {
-  id             String                 @id @default(uuid())
-  name           String
-  price          Float
-  stock          Int                    @default(0)
-  baseUnit       ProductBaseUnit        @default(UNIT)
-  categoryId     String
-  category       Category               @relation(fields: [categoryId], references: [id])
-  packageOptions ProductPackageOption[]
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  saleItems      SaleItem[]
-  movements      StockMovement[]
+  id                String                 @id @default(uuid())
+  name              String
+  price             Float
+  stock             Int                    @default(0)
+  baseUnit          ProductBaseUnit        @default(UNIT)
+  categoryId        String
+  category          Category               @relation(fields: [categoryId], references: [id])
+  packageOptions    ProductPackageOption[]
+  lowStockThreshold Int                    @default(5)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  saleItems         SaleItem[]
+  movements         StockMovement[]
+
+  @@index([categoryId])
 }
 
 model ProductPackageOption {
@@ -98,6 +101,8 @@ model CustomerLedgerEntry {
   paymentId  String?
   note       String?
   createdAt  DateTime        @default(now())
+
+  @@index([customerId])
 }
 
 enum PaymentMethod {
@@ -132,6 +137,8 @@ model Sale {
   items         SaleItem[]
   createdAt     DateTime      @default(now())
   syncedAt      DateTime?
+
+  @@index([createdAt])
 }
 
 model SalePayment {

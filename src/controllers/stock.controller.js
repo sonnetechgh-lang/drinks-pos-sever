@@ -44,6 +44,7 @@ export const getStockLevels = async (req, res) => {
         id: true,
         name: true,
         stock: true,
+        lowStockThreshold: true,
         category: { select: { name: true } },
       },
       orderBy: { stock: 'asc' },
@@ -51,7 +52,7 @@ export const getStockLevels = async (req, res) => {
     
     const productsWithFlag = products.map(p => ({
       ...p,
-      isLowStock: p.stock <= 5
+      isLowStock: p.stock <= p.lowStockThreshold
     }))
 
     res.json({ success: true, data: productsWithFlag })
