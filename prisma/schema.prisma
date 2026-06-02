@@ -12,6 +12,7 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(CASHIER)
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   sales     Sale[]
 }

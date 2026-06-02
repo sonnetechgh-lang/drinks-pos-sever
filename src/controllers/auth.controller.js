@@ -18,6 +18,10 @@ export const login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' })
     }
 
+    if (!user.active) {
+      return res.status(403).json({ success: false, message: 'This account has been disabled' })
+    }
+
     const passwordMatches = await bcrypt.compare(password, user.password)
     if (!passwordMatches) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' })
@@ -29,6 +33,7 @@ export const login = async (req, res) => {
         email: user.email,
         role: user.role,
         name: user.name,
+        active: user.active,
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
@@ -43,6 +48,7 @@ export const login = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          active: user.active,
         },
       },
     })
