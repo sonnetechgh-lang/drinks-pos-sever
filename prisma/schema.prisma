@@ -119,6 +119,7 @@ model Sale {
   id            String        @id @default(uuid())
   clientId      String        @unique
   total         Float
+  discount      Float         @default(0)
   amountPaid    Float         @default(0)
   creditAmount  Float         @default(0)
   customerId    String?

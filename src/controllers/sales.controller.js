@@ -31,6 +31,7 @@ export const syncSales = async (req, res) => {
         }
 
         const total = parseNumber(sale.total)
+        const discount = parseNumber(sale.discount)
         const paymentLines = Array.isArray(sale.paymentLines) ? sale.paymentLines : []
         const paidAmount = paymentLines.reduce((sum, line) => {
           if (line.method === 'CREDIT') return sum
@@ -47,6 +48,7 @@ export const syncSales = async (req, res) => {
           data: {
             clientId: sale.clientId,
             total,
+            discount,
             amountPaid: paidAmount,
             creditAmount: creditAmount > 0 ? creditAmount : 0,
             customerId: sale.customerId || undefined,
