@@ -58,15 +58,20 @@ export const syncSales = async (req, res) => {
             createdAt: sale.createdAt ? new Date(sale.createdAt) : undefined,
             syncedAt: new Date(),
             items: {
-              create: sale.items.map((item) => ({
-                productId: item.productId,
-                packageOptionId: item.packageOptionId || undefined,
-                packageName: item.packageName || 'Unit',
-                unitsPerBase: item.unitsPerBase || 1,
-                quantity: item.quantity,
-                baseQuantity: item.baseQuantity || item.quantity,
-                unitPrice: parseNumber(item.unitPrice),
-              }))
+              create: sale.items.map((item) => {
+                const unitPrice = parseNumber(item.unitPrice)
+                const quantity = item.quantity
+                return {
+                  productId: item.productId,
+                  packageOptionId: item.packageOptionId || undefined,
+                  packageName: item.packageName || 'Unit',
+                  unitsPerBase: item.unitsPerBase || 1,
+                  quantity: quantity,
+                  baseQuantity: item.baseQuantity || item.quantity,
+                  unitPrice: unitPrice,
+                  subtotal: unitPrice * quantity,
+                }
+              })
             },
             payments: {
               create: paymentLines.map((line) => ({
@@ -107,18 +112,38 @@ export const syncSales = async (req, res) => {
               note: sale.customerName ? `Sale for ${sale.customerName}` : `Sale ${newSale.id}`,
             }
           })
+          
+          await tx.customer.update({
+            where: { id: sale.customerId },
+            data: { currentBalance: { decrement: creditAmount } }
+          })
         }
 
         for (const line of paymentLines) {
           if (line.method === 'ADVANCE_BALANCE' && sale.customerId) {
+            const amount = parseNumber(line.amount)
+            const customer = await tx.customer.findUnique({
+              where: { id: sale.customerId },
+              select: { currentBalance: true }
+            })
+
+            if (!customer || Number(customer.currentBalance || 0) < amount) {
+              throw new Error('Insufficient advance balance')
+            }
+
             await tx.customerLedgerEntry.create({
               data: {
                 customerId: sale.customerId,
                 type: 'ADVANCE_APPLIED',
-                amount: parseNumber(line.amount),
+                amount,
                 saleId: newSale.id,
                 note: 'Advance balance applied',
               }
+            })
+
+            await tx.customer.update({
+              where: { id: sale.customerId },
+              data: { currentBalance: { decrement: amount } }
             })
           }
         }
@@ -288,26 +313,19 @@ export const getBestSellingProducts = async (req, res) => {
 // Dashboard: Total outstanding credit
 export const getOutstandingCredit = async (req, res) => {
   try {
-    const result = await prisma.customerLedgerEntry.aggregate({
-      _sum: { amount: true },
+    const result = await prisma.customer.aggregate({
+      _sum: { currentBalance: true },
       where: {
-        type: 'SALE_DEBIT'
+        currentBalance: { lt: 0 }
       }
     })
 
-    const payments = await prisma.customerLedgerEntry.aggregate({
-      _sum: { amount: true },
-      where: {
-        type: 'PAYMENT_CREDIT'
-      }
-    })
-
-    const outstanding = (result._sum.amount || 0) - (payments._sum.amount || 0)
+    const outstanding = Math.abs(result._sum.currentBalance || 0)
 
     res.json({
       success: true,
       data: {
-        outstanding: Math.max(0, outstanding)
+        outstanding
       }
     })
   } catch (error) {
@@ -346,6 +364,77 @@ export const getSalesReport = async (req, res) => {
     ])
 
     res.json({ success: true, data: sales, total })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const deleteSale = async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({
+        where: { id },
+        include: { items: true, customer: true }
+      })
+
+      if (!sale) throw new Error('Sale not found')
+
+      // 1. Restore Stock
+      for (const item of sale.items) {
+        if (item.baseQuantity > 0) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.baseQuantity } }
+          })
+
+          await tx.stockMovement.create({
+            data: {
+              productId: item.productId,
+              quantity: item.baseQuantity,
+              type: 'ADJUSTMENT',
+              note: `Sale ${sale.id} (Client: ${sale.clientId}) deleted - stock restored`
+            }
+          })
+        }
+      }
+
+      // 2. Adjust Customer Balance if credit or advance was involved
+      if (sale.customerId) {
+        const ledgerEntries = await tx.customerLedgerEntry.findMany({
+          where: { saleId: id }
+        })
+
+        for (const entry of ledgerEntries) {
+          // Create reversal entry
+          await tx.customerLedgerEntry.create({
+            data: {
+              customerId: sale.customerId,
+              type: 'CREDIT_REVERSAL',
+              amount: entry.amount,
+              saleId: id,
+              note: `Reversal of ${entry.type} due to sale deletion`
+            }
+          })
+
+          // Both SALE_DEBIT and ADVANCE_APPLIED decrease currentBalance, so we increment to reverse
+          await tx.customer.update({
+            where: { id: sale.customerId },
+            data: { currentBalance: { increment: entry.amount } }
+          })
+        }
+      }
+
+      // 3. Delete related records
+      await tx.salePayment.deleteMany({ where: { saleId: id } })
+      await tx.saleItem.deleteMany({ where: { saleId: id } })
+      await tx.sale.delete({ where: { id } })
+
+      return { success: true }
+    })
+
+    res.json(result)
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }

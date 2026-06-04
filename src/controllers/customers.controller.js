@@ -15,18 +15,11 @@ export const getCustomers = async (req, res) => {
       orderBy: { createdAt: 'desc' },
     })
 
-    const customersWithBalance = await Promise.all(
-      customers.map(async (customer) => {
-        const ledger = await prisma.customerLedgerEntry.findMany({ where: { customerId: customer.id } })
-        const balance = ledger.reduce((sum, entry) => {
-          if (entry.type === 'PAYMENT_CREDIT' || entry.type === 'CREDIT_REVERSAL' || entry.type === 'ADJUSTMENT') {
-            return sum + entry.amount
-          }
-          return sum - entry.amount
-        }, 0)
-        return { ...customer, balance }
-      })
-    )
+    // Balance is now a denormalized field
+    const customersWithBalance = customers.map(c => ({
+      ...c,
+      balance: c.currentBalance // Keep 'balance' key for frontend compatibility
+    }))
 
     res.json({ success: true, data: customersWithBalance })
   } catch (error) {
@@ -39,7 +32,7 @@ export const getCustomerById = async (req, res) => {
   try {
     const customer = await prisma.customer.findUnique({ where: { id } })
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' })
-    res.json({ success: true, data: customer })
+    res.json({ success: true, data: { ...customer, balance: customer.currentBalance } })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
@@ -55,7 +48,7 @@ export const createCustomer = async (req, res) => {
     if (clientId) {
       const existing = await prisma.customer.findUnique({ where: { clientId } })
       if (existing) {
-        return res.status(200).json({ success: true, data: existing })
+        return res.status(200).json({ success: true, data: { ...existing, balance: existing.currentBalance } })
       }
     }
 
@@ -69,7 +62,7 @@ export const createCustomer = async (req, res) => {
         active: active !== undefined ? active : true,
       },
     })
-    res.status(201).json({ success: true, data: customer })
+    res.status(201).json({ success: true, data: { ...customer, balance: customer.currentBalance } })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
@@ -89,7 +82,7 @@ export const updateCustomer = async (req, res) => {
         active,
       },
     })
-    res.json({ success: true, data: customer })
+    res.json({ success: true, data: { ...customer, balance: customer.currentBalance } })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
@@ -111,14 +104,19 @@ export const getCustomerLedger = async (req, res) => {
 export const getCustomerBalance = async (req, res) => {
   const { id } = req.params
   try {
-    const ledger = await prisma.customerLedgerEntry.findMany({ where: { customerId: id } })
-    const balance = ledger.reduce((sum, entry) => {
-      if (entry.type === 'PAYMENT_CREDIT' || entry.type === 'CREDIT_REVERSAL' || entry.type === 'ADJUSTMENT') {
-        return sum + entry.amount
-      }
-      return sum - entry.amount
-    }, 0)
-    res.json({ success: true, data: { balance, ledger } })
+    const customer = await prisma.customer.findUnique({
+      where: { id },
+      select: { currentBalance: true }
+    })
+    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' })
+
+    const ledger = await prisma.customerLedgerEntry.findMany({ 
+      where: { customerId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 50 // Optimization: only take last 50 for quick view
+    })
+    
+    res.json({ success: true, data: { balance: customer.currentBalance, ledger } })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
@@ -166,35 +164,22 @@ export const getTopDebtors = async (req, res) => {
   const { limit = 5 } = req.query
   try {
     const customers = await prisma.customer.findMany({
-      include: {
-        ledger: true
+      where: {
+        currentBalance: { lt: 0 }
       },
-      orderBy: { createdAt: 'desc' },
-      take: 100 // Get all, we'll calculate balance for each
+      orderBy: { currentBalance: 'asc' }, // Most negative first
+      take: parseInt(limit, 10)
     })
 
-    // Calculate balance for each customer and filter those with outstanding credit
-    const customersWithBalance = customers
-      .map((customer) => {
-        const balance = customer.ledger.reduce((sum, entry) => {
-          if (entry.type === 'PAYMENT_CREDIT' || entry.type === 'CREDIT_REVERSAL' || entry.type === 'ADJUSTMENT') {
-            return sum + entry.amount
-          }
-          return sum - entry.amount
-        }, 0)
-        return {
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone,
-          outstandingBalance: Math.max(0, -balance), // Negative balance means credit
-          creditLimit: customer.creditLimit
-        }
-      })
-      .filter((c) => c.outstandingBalance > 0)
-      .sort((a, b) => b.outstandingBalance - a.outstandingBalance)
-      .slice(0, parseInt(limit, 10))
+    const formattedDebtors = customers.map(c => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      outstandingBalance: Math.abs(c.currentBalance),
+      creditLimit: c.creditLimit
+    }))
 
-    res.json({ success: true, data: customersWithBalance })
+    res.json({ success: true, data: formattedDebtors })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }

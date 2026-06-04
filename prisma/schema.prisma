@@ -23,9 +23,10 @@ enum Role {
 }
 
 model Category {
-  id       String    @id @default(uuid())
-  name     String    @unique
-  products Product[]
+  id           String    @id @default(uuid())
+  name         String    @unique
+  hasPackaging Boolean   @default(false)
+  products     Product[]
 }
 
 model Product {
@@ -47,15 +48,16 @@ model Product {
 }
 
 model ProductPackageOption {
-  id           String     @id @default(uuid())
-  productId    String
-  product      Product    @relation(fields: [productId], references: [id])
-  name         String
-  unitsPerBase Int
-  price        Float
-  isDefault    Boolean    @default(false)
-  active       Boolean    @default(true)
-  saleItems    SaleItem[]
+  id             String     @id @default(uuid())
+  productId      String
+  product        Product    @relation(fields: [productId], references: [id])
+  name           String
+  unitsPerBase   Int
+  price          Float
+  wholesalePrice Float?
+  isDefault      Boolean    @default(false)
+  active         Boolean    @default(true)
+  saleItems      SaleItem[]
 }
 
 enum ProductBaseUnit {
@@ -64,18 +66,19 @@ enum ProductBaseUnit {
 }
 
 model Customer {
-  id          String                @id @default(uuid())
-  clientId    String?               @unique
-  name        String
-  phone       String?
-  notes       String?
-  creditLimit Float                 @default(0)
-  active      Boolean               @default(true)
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
-  sales       Sale[]
-  payments    CustomerPayment[]
-  ledger      CustomerLedgerEntry[]
+  id             String                @id @default(uuid())
+  clientId       String?               @unique
+  name           String
+  phone          String?
+  notes          String?
+  creditLimit    Float                 @default(0)
+  currentBalance Decimal               @default(0)
+  active         Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  sales          Sale[]
+  payments       CustomerPayment[]
+  ledger         CustomerLedgerEntry[]
 }
 
 model CustomerPayment {
@@ -116,6 +119,7 @@ enum PaymentMethod {
 enum LedgerEntryType {
   SALE_DEBIT
   PAYMENT_CREDIT
+  PAYMENT_DEPOSIT
   ADVANCE_APPLIED
   CREDIT_REVERSAL
   ADJUSTMENT
@@ -171,6 +175,7 @@ model SaleItem {
   quantity        Int
   baseQuantity    Int
   unitPrice       Float
+  subtotal        Float
 }
 
 model StockMovement {
@@ -187,4 +192,5 @@ enum MovementType {
   RESTOCK
   SALE
   ADJUSTMENT
+  RECONCILIATION
 }

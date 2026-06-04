@@ -5,6 +5,7 @@ const normalizePackageOptions = (packageOptions = []) =>
     name: option.name,
     unitsPerBase: parseInt(option.unitsPerBase, 10) || 1,
     price: parseFloat(option.price) || 0,
+    wholesalePrice: option.wholesalePrice ? parseFloat(option.wholesalePrice) : null,
     isDefault: option.isDefault || false,
     active: option.active !== undefined ? option.active : true,
   }))
@@ -38,6 +39,14 @@ export const getProductById = async (req, res) => {
 
 export const createProduct = async (req, res) => {
   const { name, price, stock, lowStockThreshold, categoryId, baseUnit, packageOptions } = req.body
+  if (!name?.trim()) {
+    return res.status(400).json({ success: false, message: 'Product name is required' })
+  }
+
+  if (!categoryId) {
+    return res.status(400).json({ success: false, message: 'Select a category before saving the product' })
+  }
+
   try {
     const product = await prisma.product.create({
       data: {
@@ -54,7 +63,8 @@ export const createProduct = async (req, res) => {
     })
     res.status(201).json({ success: true, data: product })
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    const message = error.code === 'P2003' ? 'Selected category does not exist' : error.message
+    res.status(error.code === 'P2003' ? 400 : 500).json({ success: false, message })
   }
 }
 
@@ -101,7 +111,37 @@ export const deleteProduct = async (req, res) => {
 export const getAllCategories = async (req, res) => {
   try {
     const categories = await prisma.category.findMany()
-    res.json({ success: true, data: categories })
+    res.json({
+      success: true,
+      data: categories.map((category) => ({
+        ...category,
+        hasPackaging: category.hasPackaging || category.name.toLowerCase() === 'alcoholic',
+      })),
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const createCategory = async (req, res) => {
+  const { name, hasPackaging } = req.body
+  if (!name?.trim()) {
+    return res.status(400).json({ success: false, message: 'Category name is required' })
+  }
+  try {
+    const existing = await prisma.category.findUnique({
+      where: { name: name.trim() }
+    })
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Category name must be unique' })
+    }
+    const category = await prisma.category.create({
+      data: {
+        name: name.trim(),
+        hasPackaging: !!hasPackaging
+      }
+    })
+    res.status(201).json({ success: true, data: category })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
@@ -122,15 +162,15 @@ export const getLowStockProducts = async (req, res) => {
   const { limit = 8 } = req.query
   try {
     const products = await prisma.product.findMany({
-      where: {
-        stock: { lte: prisma.product.fields.lowStockThreshold }
-      },
       include: { category: true },
       orderBy: { stock: 'asc' },
-      take: parseInt(limit, 10)
     })
 
-    res.json({ success: true, data: products })
+    const lowStock = products
+      .filter((p) => p.stock <= p.lowStockThreshold)
+      .slice(0, parseInt(limit, 10))
+
+    res.json({ success: true, data: lowStock })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }

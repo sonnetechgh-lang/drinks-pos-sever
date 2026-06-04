@@ -7,5 +7,6 @@ const router = express.Router()
 
 router.get('/levels', auth, roleGuard(['ADMIN']), stockController.getStockLevels)
 router.patch('/adjust', auth, roleGuard(['ADMIN']), stockController.updateStock)
+router.post('/audit', auth, roleGuard(['ADMIN']), stockController.performStockAudit)
 
 export default router

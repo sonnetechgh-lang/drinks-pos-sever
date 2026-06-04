@@ -10,9 +10,10 @@
     "dev": "nodemon src/server.js",
     "migrate": "prisma migrate dev --name init",
     "deploy:migrate": "prisma migrate deploy",
-    "seed": "node prisma/seed_postgres.cjs",
+    "seed": "node prisma/seed.js",
+    "migrate:balances": "node src/scripts/migrateBalances.js",
     "prisma": "prisma",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +31,7 @@
     "prisma": "^7.8.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "vitest": "^3.0.5"
   }
 }
