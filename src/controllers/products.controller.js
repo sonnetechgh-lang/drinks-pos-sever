@@ -10,8 +10,41 @@ const normalizePackageOptions = (packageOptions = []) =>
     active: option.active !== undefined ? option.active : true,
   }))
 
+const defaultCategories = [
+  { name: 'Alcoholic', hasPackaging: true },
+  { name: 'Non-Alcoholic', hasPackaging: false },
+]
+
+const ensureDefaultCategories = async () => {
+  const legacyAlcoholic = await prisma.category.findMany({
+    where: { name: { in: ['Alcohlic', 'Alcoholic Drinks'] } },
+  })
+
+  const categories = await Promise.all(defaultCategories.map((category) =>
+    prisma.category.upsert({
+      where: { name: category.name },
+      update: { hasPackaging: category.hasPackaging },
+      create: category,
+    })
+  ))
+
+  const alcoholic = categories.find((category) => category.name === 'Alcoholic')
+  if (alcoholic) {
+    for (const legacy of legacyAlcoholic) {
+      await prisma.product.updateMany({
+        where: { categoryId: legacy.id },
+        data: { categoryId: alcoholic.id },
+      })
+      await prisma.category.delete({ where: { id: legacy.id } })
+    }
+  }
+
+  return categories
+}
+
 export const getAllProducts = async (req, res) => {
   try {
+    await ensureDefaultCategories()
     const products = await prisma.product.findMany({
       include: { category: true, packageOptions: true },
     })
@@ -101,21 +134,33 @@ export const updateProduct = async (req, res) => {
 export const deleteProduct = async (req, res) => {
   const { id } = req.params
   try {
-    await prisma.product.delete({ where: { id } })
+    await prisma.$transaction(async (tx) => {
+      await tx.stockMovement.deleteMany({ where: { productId: id } })
+      await tx.productPackageOption.deleteMany({ where: { productId: id } })
+      await tx.product.delete({ where: { id } })
+    })
     res.json({ success: true, message: 'Product deleted' })
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message })
+    const message = error.code === 'P2025'
+      ? 'Product not found'
+      : error.code === 'P2003'
+        ? 'This product has sales history and cannot be deleted.'
+        : error.message
+    res.status(error.code === 'P2025' ? 404 : error.code === 'P2003' ? 409 : 500).json({ success: false, message })
   }
 }
 
 export const getAllCategories = async (req, res) => {
   try {
-    const categories = await prisma.category.findMany()
+    await ensureDefaultCategories()
+    const categories = await prisma.category.findMany({
+      orderBy: { name: 'asc' },
+    })
     res.json({
       success: true,
       data: categories.map((category) => ({
         ...category,
-        hasPackaging: category.hasPackaging || category.name.toLowerCase() === 'alcoholic',
+        hasPackaging: category.hasPackaging || ['alcoholic', 'alcohlic'].includes(category.name.toLowerCase()),
       })),
     })
   } catch (error) {

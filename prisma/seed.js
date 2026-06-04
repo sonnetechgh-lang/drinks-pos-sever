@@ -1,29 +1,32 @@
 import 'dotenv/config'
 import bcrypt from 'bcryptjs'
-import pkg from '@prisma/client'
-const { PrismaClient } = pkg
-
-const prisma = new PrismaClient()
+import { prisma } from '../src/prisma.js'
 
 async function main() {
-  const adminPassword = await bcrypt.hash('admin1234', 10)
+  const adminPassword = await bcrypt.hash('palaceline1234', 10)
   const cashierPassword = await bcrypt.hash('cashier1234', 10)
 
   console.log('Seeding users...')
   await prisma.user.upsert({
-    where: { email: 'admin@drinkspos.com' },
-    update: { password: adminPassword },
-    create: {
+    where: { email: 'admin@palacelinepos.com' },
+    update: {
       name: 'Admin User',
-      email: 'admin@drinkspos.com',
       password: adminPassword,
       role: 'ADMIN',
+      active: true,
+    },
+    create: {
+      name: 'Admin User',
+      email: 'admin@palacelinepos.com',
+      password: adminPassword,
+      role: 'ADMIN',
+      active: true,
     },
   })
 
   await prisma.user.upsert({
     where: { email: 'cashier@drinkspos.com' },
-    update: { password: cashierPassword },
+    update: { password: cashierPassword, active: true },
     create: {
       name: 'Cashier User',
       email: 'cashier@drinkspos.com',
@@ -33,11 +36,23 @@ async function main() {
   })
 
   console.log('Seeding categories...')
+  const legacyAlcoholic = await prisma.category.findMany({
+    where: { name: { in: ['Alcohlic', 'Alcoholic Drinks'] } },
+  })
+
   const alcoholic = await prisma.category.upsert({
     where: { name: 'Alcoholic' },
     update: { hasPackaging: true },
     create: { name: 'Alcoholic', hasPackaging: true },
   })
+
+  for (const legacy of legacyAlcoholic) {
+    await prisma.product.updateMany({
+      where: { categoryId: legacy.id },
+      data: { categoryId: alcoholic.id },
+    })
+    await prisma.category.delete({ where: { id: legacy.id } })
+  }
 
   const nonAlcoholic = await prisma.category.upsert({
     where: { name: 'Non-Alcoholic' },
@@ -95,22 +110,32 @@ async function main() {
 
   for (const p of products) {
     const { packageOptions, ...productData } = p
-    await prisma.product.upsert({
+    const existingProduct = await prisma.product.findFirst({
       where: { name: p.name },
-      update: {
-        ...productData,
-        packageOptions: {
-          deleteMany: {},
-          create: packageOptions
-        }
-      },
-      create: {
-        ...productData,
-        packageOptions: {
-          create: packageOptions
-        }
-      }
+      select: { id: true },
     })
+
+    if (existingProduct) {
+      await prisma.product.update({
+        where: { id: existingProduct.id },
+        data: {
+          ...productData,
+          packageOptions: {
+            deleteMany: {},
+            create: packageOptions
+          }
+        },
+      })
+    } else {
+      await prisma.product.create({
+        data: {
+          ...productData,
+          packageOptions: {
+            create: packageOptions
+          }
+        }
+      })
+    }
   }
 
   console.log('Seeding completed successfully.')

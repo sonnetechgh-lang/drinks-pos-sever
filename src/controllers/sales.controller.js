@@ -5,11 +5,30 @@ const parseNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+const parseReportDate = (value, fallback, boundary = 'start') => {
+  if (!value) return fallback
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number)
+    const date = new Date(year, month - 1, day)
+    if (boundary === 'end') date.setHours(23, 59, 59, 999)
+    return date
+  }
+
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? fallback : date
+}
+
 export const syncSales = async (req, res) => {
   const { sales } = req.body
+  const cashierId = req.user?.id
 
   if (!sales || !Array.isArray(sales)) {
     return res.status(400).json({ success: false, message: 'Invalid sales data' })
+  }
+
+  if (!cashierId) {
+    return res.status(401).json({ success: false, message: 'Login again before syncing sales' })
   }
 
   try {
@@ -19,6 +38,10 @@ export const syncSales = async (req, res) => {
       for (const sale of sales) {
         if (!sale.clientId) {
           throw new Error('Sale clientId is required for deduplication')
+        }
+
+        if (!Array.isArray(sale.items) || sale.items.length === 0) {
+          throw new Error('Sale must include at least one item')
         }
 
         const existing = await tx.sale.findUnique({
@@ -54,7 +77,7 @@ export const syncSales = async (req, res) => {
             customerId: sale.customerId || undefined,
             customerName: sale.customerName || undefined,
             paymentStatus,
-            cashierId: sale.cashierId,
+            cashierId,
             createdAt: sale.createdAt ? new Date(sale.createdAt) : undefined,
             syncedAt: new Date(),
             items: {
@@ -337,10 +360,13 @@ export const getOutstandingCredit = async (req, res) => {
 export const getSalesReport = async (req, res) => {
   const { startDate, endDate, paymentStatus, limit = 50, offset = 0 } = req.query
   try {
+    const defaultStart = new Date()
+    defaultStart.setDate(defaultStart.getDate() - 30)
+
     const where = {
       createdAt: {
-        gte: new Date(startDate || new Date(new Date().setDate(new Date().getDate() - 30))),
-        lte: new Date(endDate || new Date())
+        gte: parseReportDate(startDate, defaultStart, 'start'),
+        lte: parseReportDate(endDate, new Date(), 'end')
       }
     }
 

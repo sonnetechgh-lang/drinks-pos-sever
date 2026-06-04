@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { syncSales } from './sales.controller.js'
+import { getSalesReport, syncSales } from './sales.controller.js'
 import { prisma } from '../prisma.js'
 
 vi.mock('../prisma.js', () => ({
@@ -7,6 +7,14 @@ vi.mock('../prisma.js', () => ({
     $transaction: vi.fn(),
     sale: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+    },
+    product: {
+      update: vi.fn(),
+    },
+    stockMovement: {
       create: vi.fn(),
     }
   }
@@ -22,9 +30,23 @@ describe('sales.controller', () => {
       const req = {
         body: {
           sales: [
-            { clientId: 'sale-1', items: [], total: 100 }
+            {
+              clientId: 'sale-1',
+              total: 100,
+              items: [
+                {
+                  productId: 'product-1',
+                  packageName: 'Unit',
+                  unitsPerBase: 1,
+                  quantity: 1,
+                  baseQuantity: 1,
+                  unitPrice: 100,
+                },
+              ],
+            }
           ]
-        }
+        },
+        user: { id: 'user-1' },
       }
       const res = {
         json: vi.fn(),
@@ -49,10 +71,19 @@ describe('sales.controller', () => {
           sales: [
             {
               clientId: 'sale-new',
-              items: [],
+              items: [
+                {
+                  productId: 'product-1',
+                  packageName: 'Unit',
+                  unitsPerBase: 1,
+                  quantity: 1,
+                  baseQuantity: 1,
+                  unitPrice: 100,
+                },
+              ],
               total: 100,
               createdAt: new Date().toISOString(),
-              cashierId: 'user-1',
+              cashierId: 'stale-user-id',
               paymentLines: [{ method: 'CASH', amount: 100 }],
             }
           ]
@@ -74,7 +105,33 @@ describe('sales.controller', () => {
       await syncSales(req, res)
 
       expect(prisma.sale.create).toHaveBeenCalled()
+      expect(prisma.sale.create.mock.calls[0][0].data.cashierId).toBe('user-1')
       expect(res.json).toHaveBeenCalledWith({ success: true, data: ['sale-new'] })
+    })
+  })
+
+  describe('getSalesReport', () => {
+    it('includes the full selected end date for date-only report filters', async () => {
+      const req = {
+        query: {
+          startDate: '2026-06-04',
+          endDate: '2026-06-04',
+        },
+      }
+      const res = {
+        json: vi.fn(),
+        status: vi.fn().mockReturnThis()
+      }
+
+      prisma.sale.findMany.mockResolvedValue([])
+      prisma.sale.count.mockResolvedValue(0)
+
+      await getSalesReport(req, res)
+
+      const where = prisma.sale.findMany.mock.calls[0][0].where
+      expect(where.createdAt.gte).toEqual(new Date(2026, 5, 4, 0, 0, 0, 0))
+      expect(where.createdAt.lte).toEqual(new Date(2026, 5, 4, 23, 59, 59, 999))
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: [], total: 0 })
     })
   })
 })
