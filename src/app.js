@@ -11,10 +11,21 @@ import customerPaymentsRouter from './routes/v1/customerPayments.js'
 
 const app = express()
 
-const allowedOrigins = (process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:5173')
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://drinks-pos-client.vercel.app',
+]
+
+const configuredOrigins = [
+  process.env.CORS_ORIGIN,
+  process.env.FRONTEND_URL,
+].filter(Boolean).join(',')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean)
+
+const allowedOrigins = Array.from(new Set([...defaultOrigins, ...configuredOrigins]))
 
 app.use(cors({
   origin(origin, callback) {
