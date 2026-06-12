@@ -12,6 +12,7 @@
     "deploy:migrate": "prisma migrate deploy",
     "seed": "node prisma/seed.js",
     "migrate:balances": "node src/scripts/migrateBalances.js",
+    "cleanup:production-test-data": "node src/scripts/clearProductionTestData.js",
     "prisma": "prisma",
     "test": "vitest"
   },
