@@ -9,6 +9,7 @@ vi.mock('../prisma.js', () => ({
       findUnique: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
+      aggregate: vi.fn(),
       create: vi.fn(),
     },
     product: {
@@ -124,14 +125,27 @@ describe('sales.controller', () => {
       }
 
       prisma.sale.findMany.mockResolvedValue([])
-      prisma.sale.count.mockResolvedValue(0)
+      prisma.sale.aggregate.mockResolvedValue({ _count: 0, _sum: { total: null } })
 
       await getSalesReport(req, res)
 
       const where = prisma.sale.findMany.mock.calls[0][0].where
       expect(where.createdAt.gte).toEqual(new Date(2026, 5, 4, 0, 0, 0, 0))
       expect(where.createdAt.lte).toEqual(new Date(2026, 5, 4, 23, 59, 59, 999))
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: [], total: 0 })
+      expect(prisma.sale.aggregate).toHaveBeenCalledWith({
+        where,
+        _count: true,
+        _sum: { total: true }
+      })
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: [],
+        total: 0,
+        totalRevenue: 0,
+        returned: 0,
+        limit: 50,
+        offset: 0,
+      })
     })
   })
 })

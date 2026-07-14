@@ -362,6 +362,8 @@ export const getSalesReport = async (req, res) => {
   try {
     const defaultStart = new Date()
     defaultStart.setDate(defaultStart.getDate() - 30)
+    const parsedLimit = Math.max(1, parseInt(limit, 10) || 50)
+    const parsedOffset = Math.max(0, parseInt(offset, 10) || 0)
 
     const where = {
       createdAt: {
@@ -374,7 +376,7 @@ export const getSalesReport = async (req, res) => {
       where.paymentStatus = paymentStatus
     }
 
-    const [sales, total] = await Promise.all([
+    const [sales, summary] = await Promise.all([
       prisma.sale.findMany({
         where,
         include: {
@@ -383,13 +385,25 @@ export const getSalesReport = async (req, res) => {
           items: { include: { product: { select: { name: true } } } }
         },
         orderBy: { createdAt: 'desc' },
-        take: parseInt(limit, 10),
-        skip: parseInt(offset, 10)
+        take: parsedLimit,
+        skip: parsedOffset
       }),
-      prisma.sale.count({ where })
+      prisma.sale.aggregate({
+        where,
+        _count: true,
+        _sum: { total: true }
+      })
     ])
 
-    res.json({ success: true, data: sales, total })
+    res.json({
+      success: true,
+      data: sales,
+      total: summary._count || 0,
+      totalRevenue: summary._sum.total || 0,
+      returned: sales.length,
+      limit: parsedLimit,
+      offset: parsedOffset,
+    })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
