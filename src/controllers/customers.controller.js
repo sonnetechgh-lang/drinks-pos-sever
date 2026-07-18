@@ -91,11 +91,49 @@ export const updateCustomer = async (req, res) => {
 export const getCustomerLedger = async (req, res) => {
   const { id } = req.params
   try {
+    const customer = await prisma.customer.findUnique({ where: { id } })
+    if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' })
+
     const entries = await prisma.customerLedgerEntry.findMany({
       where: { customerId: id },
       orderBy: { createdAt: 'desc' },
     })
-    res.json({ success: true, data: entries })
+    const saleIds = entries.map((entry) => entry.saleId).filter(Boolean)
+    const paymentIds = entries.map((entry) => entry.paymentId).filter(Boolean)
+
+    const [sales, payments] = await Promise.all([
+      saleIds.length > 0
+        ? prisma.sale.findMany({
+            where: { id: { in: saleIds } },
+            include: {
+              cashier: { select: { name: true } },
+              payments: true,
+              items: { include: { product: { select: { name: true } } } },
+            },
+          })
+        : [],
+      paymentIds.length > 0
+        ? prisma.customerPayment.findMany({
+            where: { id: { in: paymentIds } },
+          })
+        : [],
+    ])
+
+    const saleMap = new Map(sales.map((sale) => [sale.id, sale]))
+    const paymentMap = new Map(payments.map((payment) => [payment.id, payment]))
+    const detailedEntries = entries.map((entry) => ({
+      ...entry,
+      sale: entry.saleId ? saleMap.get(entry.saleId) || null : null,
+      payment: entry.paymentId ? paymentMap.get(entry.paymentId) || null : null,
+    }))
+
+    res.json({
+      success: true,
+      data: {
+        customer: { ...customer, balance: customer.currentBalance },
+        entries: detailedEntries,
+      },
+    })
   } catch (error) {
     res.status(500).json({ success: false, message: error.message })
   }
