@@ -132,6 +132,8 @@ model Sale {
   discount      Float         @default(0)
   amountPaid    Float         @default(0)
   creditAmount  Float         @default(0)
+  previousDebt  Float         @default(0)
+  balanceDue    Float         @default(0)
   customerId    String?
   customer      Customer?     @relation(fields: [customerId], references: [id])
   customerName  String?

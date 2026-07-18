@@ -61,10 +61,32 @@ export const syncSales = async (req, res) => {
           return sum + parseNumber(line.amount)
         }, 0)
         const creditAmount = total - paidAmount
+        const outstandingCreditAmount = Math.max(0, creditAmount)
         const paymentStatus = sale.paymentStatus || (creditAmount <= 0 ? 'PAID' : paidAmount > 0 ? 'PARTIAL' : 'CREDIT')
+        const advanceAmount = paymentLines.reduce((sum, line) => (
+          line.method === 'ADVANCE_BALANCE' ? sum + parseNumber(line.amount) : sum
+        ), 0)
 
         if ((paymentStatus === 'CREDIT' || paymentStatus === 'PARTIAL' || paymentLines.some((line) => line.method === 'ADVANCE_BALANCE')) && !sale.customerId) {
           throw new Error('Customer is required for credit, partial, or advance balance sales')
+        }
+
+        const customer = sale.customerId
+          ? await tx.customer.findUnique({
+              where: { id: sale.customerId },
+              select: { currentBalance: true }
+            })
+          : null
+        const customerBalanceBefore = Number(customer?.currentBalance || 0)
+        const previousDebt = sale.previousDebt != null
+          ? parseNumber(sale.previousDebt)
+          : Math.max(0, -customerBalanceBefore)
+        const balanceDue = sale.balanceDue != null
+          ? parseNumber(sale.balanceDue)
+          : previousDebt + outstandingCreditAmount
+
+        if (advanceAmount > 0 && customerBalanceBefore < advanceAmount) {
+          throw new Error('Insufficient advance balance')
         }
 
         const newSale = await tx.sale.create({
@@ -73,7 +95,9 @@ export const syncSales = async (req, res) => {
             total,
             discount,
             amountPaid: paidAmount,
-            creditAmount: creditAmount > 0 ? creditAmount : 0,
+            creditAmount: outstandingCreditAmount,
+            previousDebt,
+            balanceDue,
             customerId: sale.customerId || undefined,
             customerName: sale.customerName || undefined,
             paymentStatus,
@@ -125,12 +149,12 @@ export const syncSales = async (req, res) => {
           }
         }
 
-        if (sale.customerId && creditAmount > 0) {
+        if (sale.customerId && outstandingCreditAmount > 0) {
           await tx.customerLedgerEntry.create({
             data: {
               customerId: sale.customerId,
               type: 'SALE_DEBIT',
-              amount: creditAmount,
+              amount: outstandingCreditAmount,
               saleId: newSale.id,
               note: sale.customerName ? `Sale for ${sale.customerName}` : `Sale ${newSale.id}`,
             }
@@ -138,21 +162,13 @@ export const syncSales = async (req, res) => {
           
           await tx.customer.update({
             where: { id: sale.customerId },
-            data: { currentBalance: { decrement: creditAmount } }
+            data: { currentBalance: { decrement: outstandingCreditAmount } }
           })
         }
 
         for (const line of paymentLines) {
           if (line.method === 'ADVANCE_BALANCE' && sale.customerId) {
             const amount = parseNumber(line.amount)
-            const customer = await tx.customer.findUnique({
-              where: { id: sale.customerId },
-              select: { currentBalance: true }
-            })
-
-            if (!customer || Number(customer.currentBalance || 0) < amount) {
-              throw new Error('Insufficient advance balance')
-            }
 
             await tx.customerLedgerEntry.create({
               data: {
@@ -215,6 +231,7 @@ export const getSalesSummary = async (req, res) => {
       prisma.sale.findMany({
         include: {
           items: { include: { product: { select: { name: true } } } },
+          payments: true,
           cashier: { select: { name: true } }
         },
         orderBy: { createdAt: 'desc' },
@@ -265,7 +282,8 @@ export const getTodaySales = async (req, res) => {
       where: { createdAt: { gte: startOfToday } },
       include: {
         customer: { select: { name: true } },
-        cashier: { select: { name: true } }
+        cashier: { select: { name: true } },
+        payments: true,
       },
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit, 10)
@@ -382,7 +400,8 @@ export const getSalesReport = async (req, res) => {
         include: {
           customer: { select: { name: true, phone: true } },
           cashier: { select: { name: true } },
-          items: { include: { product: { select: { name: true } } } }
+          items: { include: { product: { select: { name: true } } } },
+          payments: true,
         },
         orderBy: { createdAt: 'desc' },
         take: parsedLimit,
